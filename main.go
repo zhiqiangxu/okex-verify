@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	"context"
@@ -9,7 +11,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/light"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	oksdk "github.com/okex/exchain-go-sdk"
 	common1 "github.com/polynetwork/poly/common"
 	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
@@ -64,6 +71,7 @@ func getProof() {
 			txID := tools.EncodeBigInt(txIDBig)
 			// txHash := evt.Raw.TxHash.Bytes()
 
+			fmt.Println("txIDBig", txIDBig)
 			keyBytes, err := eth.MappingKeyAt(txID, "01")
 			if err != nil {
 				panic(fmt.Sprintf("eth.MappingKeyAt failed:%v", err))
@@ -77,15 +85,116 @@ func getProof() {
 			heightHex := hexutil.EncodeBig(big.NewInt(height))
 			proofKey := hexutil.Encode(keyBytes)
 
-			proof, err := tools.GetProof(rpcURL, "0x2a88feB48E176b535da78266990D556E588Cfe06", proofKey, heightHex)
+			eccd := "0x2a88feB48E176b535da78266990D556E588Cfe06"
+			proof, err := tools.GetProof(rpcURL, eccd, proofKey, heightHex)
 			if err != nil {
 				panic(fmt.Sprintf("tools.GetProof failed:%v", err))
 			}
 
-			fmt.Println("proof", hex.EncodeToString(proof))
+			okProof := new(tools.ETHProof)
+			err = json.Unmarshal(proof, okProof)
+			if err != nil {
+				panic(fmt.Sprintf("ETHProof Unmarshal failed:%v", err))
+			}
+
+			blockData, err := client.HeaderByNumber(context.Background(), big.NewInt(height))
+			if err != nil {
+				panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
+			}
+
+			eccdBytes := common.FromHex(eccd)
+			result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
+			if err != nil {
+				panic(fmt.Sprintf("verifyMerkleProof failed:%v", err))
+			}
+			fmt.Println("result", string(result))
 
 		}
 	}
+}
+
+// ProofAccount ...
+type ProofAccount struct {
+	Nounce   *big.Int
+	Balance  *big.Int
+	Storage  common.Hash
+	Codehash common.Hash
+}
+
+func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, contractAddr []byte) ([]byte, error) {
+	//1. prepare verify account
+	nodeList := new(light.NodeList)
+
+	for _, s := range okProof.AccountProof {
+		p := common2.Replace0x(s)
+		nodeList.Put(nil, common.Hex2Bytes(p))
+	}
+	ns := nodeList.NodeSet()
+
+	addr := common.Hex2Bytes(common2.Replace0x(okProof.Address))
+	if !bytes.Equal(addr, contractAddr) {
+		return nil, fmt.Errorf("verifyMerkleProof, contract address is error, proof address: %s, side chain address: %s", okProof.Address, hex.EncodeToString(contractAddr))
+	}
+	acctKey := crypto.Keccak256(addr)
+
+	fmt.Println("blockData.Root", blockData.Root.Hex())
+	//2. verify account proof
+	acctVal, err := trie.VerifyProof(blockData.Root, acctKey, ns)
+	if err != nil {
+		return nil, fmt.Errorf("verifyMerkleProof, verify account proof error:%s", err)
+	}
+
+	nounce := new(big.Int)
+	_, ok := nounce.SetString(common2.Replace0x(okProof.Nonce), 16)
+	if !ok {
+		return nil, fmt.Errorf("verifyMerkleProof, invalid format of nounce:%s", okProof.Nonce)
+	}
+
+	balance := new(big.Int)
+	_, ok = balance.SetString(common2.Replace0x(okProof.Balance), 16)
+	if !ok {
+		return nil, fmt.Errorf("verifyMerkleProof, invalid format of balance:%s", okProof.Balance)
+	}
+
+	storageHash := common.HexToHash(common2.Replace0x(okProof.StorageHash))
+	codeHash := common.HexToHash(common2.Replace0x(okProof.CodeHash))
+
+	acct := &ProofAccount{
+		Nounce:   nounce,
+		Balance:  balance,
+		Storage:  storageHash,
+		Codehash: codeHash,
+	}
+
+	acctrlp, err := rlp.EncodeToBytes(acct)
+	if err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal(acctrlp, acctVal) {
+		return nil, fmt.Errorf("verifyMerkleProof, verify account proof failed, wanted:%v, get:%v", acctrlp, acctVal)
+	}
+
+	//3.verify storage proof
+	nodeList = new(light.NodeList)
+	if len(okProof.StorageProofs) != 1 {
+		return nil, fmt.Errorf("verifyMerkleProof, invalid storage proof format")
+	}
+
+	sp := okProof.StorageProofs[0]
+	storageKey := crypto.Keccak256(common.HexToHash(common2.Replace0x(sp.Key)).Bytes())
+
+	for _, prf := range sp.Proof {
+		nodeList.Put(nil, common.Hex2Bytes(common2.Replace0x(prf)))
+	}
+
+	ns = nodeList.NodeSet()
+	val, err := trie.VerifyProof(storageHash, storageKey, ns)
+	if err != nil {
+		return nil, fmt.Errorf("verifyMerkleProof, verify storage proof error:%s", err)
+	}
+
+	return val, nil
 }
 
 func main() {
