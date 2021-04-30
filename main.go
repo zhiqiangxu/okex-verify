@@ -9,6 +9,7 @@ import (
 	"context"
 	"math/big"
 
+	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -17,10 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	proto "github.com/gogo/protobuf/proto"
 	oksdk "github.com/okex/exchain-go-sdk"
 	common1 "github.com/polynetwork/poly/common"
 	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
 	"github.com/polynetwork/poly/native/service/cross_chain_manager/eth"
+	"github.com/tendermint/tendermint/crypto/merkle"
 	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 	"github.com/zhiqiangxu/okex-verify/pkg/tools"
 )
@@ -71,11 +74,12 @@ func getProof() {
 			txID := tools.EncodeBigInt(txIDBig)
 			// txHash := evt.Raw.TxHash.Bytes()
 
-			fmt.Println("txIDBig", txIDBig)
 			keyBytes, err := eth.MappingKeyAt(txID, "01")
 			if err != nil {
 				panic(fmt.Sprintf("eth.MappingKeyAt failed:%v", err))
 			}
+
+			fmt.Println("txIDBig", txIDBig, "storage key", hex.EncodeToString(keyBytes))
 
 			refHeight, err := client.BlockNumber(context.Background())
 			if err != nil {
@@ -102,12 +106,27 @@ func getProof() {
 				panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
 			}
 
-			eccdBytes := common.FromHex(eccd)
-			result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
+			var mproof merkle.Proof
+			err = proto.UnmarshalText(okProof.AccountProof[0], &mproof)
 			if err != nil {
-				panic(fmt.Sprintf("verifyMerkleProof failed:%v", err))
+				panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
 			}
-			fmt.Println("result", string(result))
+
+			fmt.Println("proof", string(proof))
+			// var StorageResult
+
+			prt := rootmulti.DefaultProofRuntime()
+			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), okProof.StorageProofs[0].Key, []byte(okProof.StorageProofs[0].Value))
+			if err != nil {
+				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
+			}
+
+			// eccdBytes := common.FromHex(eccd)
+			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
+			// if err != nil {
+			// 	panic(fmt.Sprintf("verifyMerkleProof failed:%v, proof:%v", err, string(proof)))
+			// }
+			// fmt.Println("result", string(result))
 
 		}
 	}
@@ -137,7 +156,7 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 	}
 	acctKey := crypto.Keccak256(addr)
 
-	fmt.Println("blockData.Root", blockData.Root.Hex())
+	fmt.Println("height", blockData.Number, "blockData.Root", blockData.Root.Hex())
 	//2. verify account proof
 	acctVal, err := trie.VerifyProof(blockData.Root, acctKey, ns)
 	if err != nil {
@@ -202,8 +221,17 @@ func main() {
 	getProof()
 	return
 
-	config, _ := oksdk.NewClientConfig(rpcURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
+	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
 	client := oksdk.NewClient(config)
+	result, err := client.Tendermint().QueryTxResult("05B02D94644BE47727A4B0FEAC3B8552EE6CFA738AB244CDAD8BA18A82ED766C", true)
+	if err != nil {
+		panic(fmt.Sprintf("QueryTxResult failed:%v", err))
+	}
+
+	resultBytes, _ := json.Marshal(result)
+
+	fmt.Println("result", string(resultBytes))
+	return
 
 	height := int64(2012155)
 	commitResult, err := client.Tendermint().QueryCommitResult(height)
