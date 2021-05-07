@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/okex/exchain/app"
+	"github.com/okex/exchain/app/codec"
 	"math/big"
 	"strings"
 
@@ -269,12 +271,13 @@ func main() {
 
 	hdr := CosmosHeader{Header: block.Header, Commit: block.LastCommit, Valsets: valResult.Validators}
 
-	hdrBytes, err := json.Marshal(hdr)
+	cdc := codec.MakeCodec(app.ModuleBasics)
+	hdrBytes, err := cdc.MarshalJSON(hdr)
 	if err != nil {
 		panic(err)
 	}
 
-	err = json.Unmarshal(hdrBytes, &hdr)
+	err = cdc.UnmarshalJSON(hdrBytes, &hdr)
 	if err != nil {
 		panic(err)
 	}

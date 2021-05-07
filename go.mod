@@ -7,6 +7,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.39.2
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/gogo/protobuf v1.3.1
+	github.com/okex/exchain v0.18.2
 	github.com/okex/exchain-go-sdk v0.18.0
 	github.com/ontio/ontology-crypto v1.0.9
 	github.com/polynetwork/poly v1.4.0
