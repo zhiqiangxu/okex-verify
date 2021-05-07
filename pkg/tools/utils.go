@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
+	ethcom "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ontio/ontology-crypto/ec"
 	"github.com/ontio/ontology-crypto/keypair"
@@ -48,19 +50,18 @@ type proofRsp struct {
 }
 
 type ETHProof struct {
-	Address       string         `json:"address"`
-	Balance       string         `json:"balance"`
-	CodeHash      string         `json:"codeHash"`
-	Nonce         string         `json:"nonce"`
-	StorageHash   string         `json:"storageHash"`
-	AccountProof  []string       `json:"accountProof"`
-	StorageProofs []StorageProof `json:"storageProof"`
+	Address       ethcom.Address  `json:"address"`
+	AccountProof  []string        `json:"accountProof"`
+	Balance       *hexutil.Big    `json:"balance"`
+	CodeHash      ethcom.Hash     `json:"codeHash"`
+	Nonce         hexutil.Uint64  `json:"nonce"`
+	StorageHash   ethcom.Hash     `json:"storageHash"`
+	StorageProofs []StorageResult `json:"storageProof"`
 }
-
-type StorageProof struct {
-	Key   string   `json:"key"`
-	Value string   `json:"value"`
-	Proof []string `json:"proof"`
+type StorageResult struct {
+	Key   string       `json:"key"`
+	Value *hexutil.Big `json:"value"`
+	Proof []string     `json:"proof"`
 }
 
 func jsonRequest(url string, data []byte) (result []byte, err error) {

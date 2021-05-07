@@ -2,12 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-
-	"context"
+	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 	"math/big"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,12 +25,11 @@ import (
 	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
 	"github.com/polynetwork/poly/native/service/cross_chain_manager/eth"
 	"github.com/tendermint/tendermint/crypto/merkle"
-	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 	"github.com/zhiqiangxu/okex-verify/pkg/tools"
 )
 
 var (
-	rpcURL   = "https://exchaintestrpc.okex.org"
+	rpcURL   = "http://18.167.77.79:26659"
 	rpcTMURL = "https://exchaintesttmrpc.okex.org"
 	name     = "alice"
 	passWd   = "12345678"
@@ -85,7 +85,7 @@ func getProof() {
 			if err != nil {
 				panic(fmt.Sprintf("client.BlockNumber failed:%v", err))
 			}
-			height := int64(refHeight - 3)
+			height := int64(refHeight)
 			heightHex := hexutil.EncodeBig(big.NewInt(height))
 			proofKey := hexutil.Encode(keyBytes)
 
@@ -101,13 +101,13 @@ func getProof() {
 				panic(fmt.Sprintf("ETHProof Unmarshal failed:%v", err))
 			}
 
-			blockData, err := client.HeaderByNumber(context.Background(), big.NewInt(height))
+			blockData, err := client.HeaderByNumber(context.Background(), big.NewInt(height+1))
 			if err != nil {
 				panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
 			}
 
 			var mproof merkle.Proof
-			err = proto.UnmarshalText(okProof.AccountProof[0], &mproof)
+			err = proto.UnmarshalText(okProof.StorageProofs[0].Proof[0], &mproof)
 			if err != nil {
 				panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
 			}
@@ -115,8 +115,18 @@ func getProof() {
 			fmt.Println("proof", string(proof))
 			// var StorageResult
 
+			keyPath := "/"
+			for i, _ := range mproof.Ops {
+				op := mproof.Ops[len(mproof.Ops)-1-i]
+				keyPath += string(op.Key)
+				keyPath += "/"
+			}
+
+			keyPath = strings.TrimSuffix(keyPath, "/")
+			//keyPath = "/evm/\005\r\002\035\020\253\236\025_\301\350p]\022\267?\233\323\336\n6ZF\205\027\326\370?\256pe\2520`\374\n\337\n\304\260\301H\026GJhw\215\220w;\323q"
+
 			prt := rootmulti.DefaultProofRuntime()
-			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), okProof.StorageProofs[0].Key, []byte(okProof.StorageProofs[0].Value))
+			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
 			if err != nil {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
 			}
@@ -150,7 +160,7 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 	}
 	ns := nodeList.NodeSet()
 
-	addr := common.Hex2Bytes(common2.Replace0x(okProof.Address))
+	addr := common.Hex2Bytes(common2.Replace0x(okProof.Address.String()))
 	if !bytes.Equal(addr, contractAddr) {
 		return nil, fmt.Errorf("verifyMerkleProof, contract address is error, proof address: %s, side chain address: %s", okProof.Address, hex.EncodeToString(contractAddr))
 	}
@@ -164,19 +174,19 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 	}
 
 	nounce := new(big.Int)
-	_, ok := nounce.SetString(common2.Replace0x(okProof.Nonce), 16)
+	_, ok := nounce.SetString(common2.Replace0x(okProof.Nonce.String()), 16)
 	if !ok {
 		return nil, fmt.Errorf("verifyMerkleProof, invalid format of nounce:%s", okProof.Nonce)
 	}
 
 	balance := new(big.Int)
-	_, ok = balance.SetString(common2.Replace0x(okProof.Balance), 16)
+	_, ok = balance.SetString(common2.Replace0x(okProof.Balance.String()), 16)
 	if !ok {
 		return nil, fmt.Errorf("verifyMerkleProof, invalid format of balance:%s", okProof.Balance)
 	}
 
-	storageHash := common.HexToHash(common2.Replace0x(okProof.StorageHash))
-	codeHash := common.HexToHash(common2.Replace0x(okProof.CodeHash))
+	storageHash := common.HexToHash(common2.Replace0x(okProof.StorageHash.Hex()))
+	codeHash := common.HexToHash(common2.Replace0x(okProof.CodeHash.Hex()))
 
 	acct := &ProofAccount{
 		Nounce:   nounce,
