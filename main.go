@@ -6,9 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 	"math/big"
 	"strings"
+
+	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 
 	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	"github.com/ethereum/go-ethereum/common"
@@ -25,6 +26,7 @@ import (
 	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
 	"github.com/polynetwork/poly/native/service/cross_chain_manager/eth"
 	"github.com/tendermint/tendermint/crypto/merkle"
+	"github.com/tendermint/tendermint/types"
 	"github.com/zhiqiangxu/okex-verify/pkg/tools"
 )
 
@@ -85,7 +87,7 @@ func getProof() {
 			if err != nil {
 				panic(fmt.Sprintf("client.BlockNumber failed:%v", err))
 			}
-			height := int64(refHeight)
+			height := int64(refHeight - 3)
 			heightHex := hexutil.EncodeBig(big.NewInt(height))
 			proofKey := hexutil.Encode(keyBytes)
 
@@ -116,7 +118,7 @@ func getProof() {
 			// var StorageResult
 
 			keyPath := "/"
-			for i, _ := range mproof.Ops {
+			for i := range mproof.Ops {
 				op := mproof.Ops[len(mproof.Ops)-1-i]
 				keyPath += string(op.Key)
 				keyPath += "/"
@@ -125,12 +127,15 @@ func getProof() {
 			keyPath = strings.TrimSuffix(keyPath, "/")
 			//keyPath = "/evm/\005\r\002\035\020\253\236\025_\301\350p]\022\267?\233\323\336\n6ZF\205\027\326\370?\256pe\2520`\374\n\337\n\304\260\301H\026GJhw\215\220w;\323q"
 
+			fmt.Println("keyPath", keyPath)
+
 			prt := rootmulti.DefaultProofRuntime()
 			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
 			if err != nil {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
 			}
 
+			fmt.Println("proof ok")
 			// eccdBytes := common.FromHex(eccd)
 			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
 			// if err != nil {
@@ -228,22 +233,27 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 
 func main() {
 
-	getProof()
-	return
+	// getProof()
+	// return
 
 	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
 	client := oksdk.NewClient(config)
-	result, err := client.Tendermint().QueryTxResult("05B02D94644BE47727A4B0FEAC3B8552EE6CFA738AB244CDAD8BA18A82ED766C", true)
-	if err != nil {
-		panic(fmt.Sprintf("QueryTxResult failed:%v", err))
-	}
+	// result, err := client.Tendermint().QueryTxResult("05B02D94644BE47727A4B0FEAC3B8552EE6CFA738AB244CDAD8BA18A82ED766C", true)
+	// if err != nil {
+	// 	panic(fmt.Sprintf("QueryTxResult failed:%v", err))
+	// }
 
-	resultBytes, _ := json.Marshal(result)
+	// resultBytes, _ := json.Marshal(result)
 
-	fmt.Println("result", string(resultBytes))
-	return
+	// fmt.Println("result", string(resultBytes))
+	// return
 
 	height := int64(2012155)
+
+	block, err := client.Tendermint().QueryBlock(height)
+	if err != nil {
+		panic(err)
+	}
 	commitResult, err := client.Tendermint().QueryCommitResult(height)
 	if err != nil {
 		panic(err)
@@ -254,6 +264,25 @@ func main() {
 		panic(err)
 	}
 
+	hdr := CosmosHeader{Header: block.Header, Commit: block.LastCommit, Valsets: valResult.Validators}
+
+	hdrBytes, err := json.Marshal(hdr)
+	if err != nil {
+		panic(err)
+	}
+
+	err = json.Unmarshal(hdrBytes, &hdr)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("block", block)
 	fmt.Println("commitResult", commitResult)
 	fmt.Println("valResult", valResult)
+}
+
+type CosmosHeader struct {
+	Header  types.Header
+	Commit  *types.Commit
+	Valsets []*types.Validator
 }
