@@ -135,6 +135,9 @@ func getProof() {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
 			}
 
+			if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
+				panic("Keccak256 not match")
+			}
 			fmt.Println("proof ok")
 			// eccdBytes := common.FromHex(eccd)
 			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
@@ -233,8 +236,8 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 
 func main() {
 
-	// getProof()
-	// return
+	getProof()
+	return
 
 	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
 	client := oksdk.NewClient(config)
