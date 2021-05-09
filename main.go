@@ -93,7 +93,7 @@ func getProof() {
 			height := int64(refHeight)
 			heightHex := hexutil.EncodeBig(big.NewInt(height))
 			proofKey := hexutil.Encode(keyBytes)
-			proofKey = "/evm/xxx"
+			proofKey = hexutil.Encode([]byte("/evm/xxx"))
 
 			eccd := "0x2a88feB48E176b535da78266990D556E588Cfe06"
 			proof, err := tools.GetProof(rpcURL, eccd, proofKey, heightHex)
