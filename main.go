@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/okex/exchain/app"
-	"github.com/okex/exchain/app/codec"
 	"math/big"
 	"strings"
+
+	"github.com/okex/exchain/app"
+	"github.com/okex/exchain/app/codec"
 
 	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 
@@ -89,9 +90,10 @@ func getProof() {
 			if err != nil {
 				panic(fmt.Sprintf("client.BlockNumber failed:%v", err))
 			}
-			height := int64(refHeight - 3)
+			height := int64(refHeight)
 			heightHex := hexutil.EncodeBig(big.NewInt(height))
 			proofKey := hexutil.Encode(keyBytes)
+			proofKey = "/evm/xxx"
 
 			eccd := "0x2a88feB48E176b535da78266990D556E588Cfe06"
 			proof, err := tools.GetProof(rpcURL, eccd, proofKey, heightHex)
@@ -132,14 +134,11 @@ func getProof() {
 			fmt.Println("keyPath", keyPath)
 
 			prt := rootmulti.DefaultProofRuntime()
-			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
+			err = prt.VerifyAbsence(&mproof, blockData.Root.Bytes(), keyPath)
 			if err != nil {
-				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
+				panic(fmt.Sprintf("VerifyAbsence failed:%v", err))
 			}
 
-			if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
-				panic("Keccak256 not match")
-			}
 			fmt.Println("proof ok")
 			// eccdBytes := common.FromHex(eccd)
 			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
@@ -238,8 +237,8 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 
 func main() {
 
-	// getProof()
-	// return
+	getProof()
+	return
 
 	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
 	client := oksdk.NewClient(config)
