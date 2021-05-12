@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/okex/exchain/app"
-	"github.com/okex/exchain/app/codec"
 	"math/big"
 	"strings"
+
+	"github.com/okex/exchain/app"
+	"github.com/okex/exchain/app/codec"
 
 	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
 
@@ -110,6 +111,27 @@ func getProof() {
 				panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
 			}
 
+			var accountProof merkle.Proof
+			err = proto.UnmarshalText(okProof.AccountProof[0], &accountProof)
+			if err != nil {
+				panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
+			}
+
+			accountKeyPath := "/"
+			for i := range accountProof.Ops {
+				op := accountProof.Ops[len(accountProof.Ops)-1-i]
+				accountKeyPath += string(op.Key)
+				accountKeyPath += "/"
+			}
+			accountKeyPath = strings.TrimSuffix(accountKeyPath, "/")
+
+			prt := rootmulti.DefaultProofRuntime()
+
+			err = prt.VerifyValue(&accountProof, blockData.Root.Bytes(), accountKeyPath, common.BytesToHash([]byte(okProof.AccountProof[0])).Bytes())
+			if err != nil {
+				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
+			}
+
 			var mproof merkle.Proof
 			err = proto.UnmarshalText(okProof.StorageProofs[0].Proof[0], &mproof)
 			if err != nil {
@@ -131,7 +153,6 @@ func getProof() {
 
 			fmt.Println("keyPath", keyPath)
 
-			prt := rootmulti.DefaultProofRuntime()
 			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
 			if err != nil {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
@@ -238,8 +259,8 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 
 func main() {
 
-	// getProof()
-	// return
+	getProof()
+	return
 
 	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
 	client := oksdk.NewClient(config)
@@ -269,6 +290,7 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Println("commitResult.Height", commitResult.Header.Height, "height", height)
 	hdr := CosmosHeader{Header: block.Header, Commit: block.LastCommit, Valsets: valResult.Validators}
 
 	cdc := codec.MakeCodec(app.ModuleBasics)
