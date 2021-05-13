@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"strings"
 
@@ -34,7 +35,7 @@ import (
 )
 
 var (
-	rpcURL   = "http://18.167.77.79:26659"
+	rpcURL   = "https://exchaintestrpc.okex.org/"
 	rpcTMURL = "https://exchaintesttmrpc.okex.org"
 	name     = "alice"
 	passWd   = "12345678"
@@ -43,6 +44,9 @@ var (
 )
 
 func getProof() {
+
+	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
+	okclient := oksdk.NewClient(config)
 
 	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
@@ -110,6 +114,10 @@ func getProof() {
 			if err != nil {
 				panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
 			}
+			cr, err := okclient.Tendermint().QueryCommitResult(height + 1)
+			if err != nil {
+				panic(fmt.Sprintf("QueryCommitResult failed:%v", err))
+			}
 
 			var accountProof merkle.Proof
 			err = proto.UnmarshalText(okProof.AccountProof[0], &accountProof)
@@ -128,7 +136,7 @@ func getProof() {
 			prt := rootmulti.DefaultProofRuntime()
 
 			err = prt.VerifyValue(&accountProof, blockData.Root.Bytes(), accountKeyPath, common.BytesToHash([]byte(okProof.AccountProof[0])).Bytes())
-			if err != nil {
+			if false && err != nil {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
 			}
 
@@ -158,10 +166,18 @@ func getProof() {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
 			}
 
+			if !bytes.Equal(cr.AppHash, blockData.Root.Bytes()) {
+				panic("AppHash != Root")
+			}
+			err = prt.VerifyValue(&mproof, cr.AppHash, keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
+			if err != nil {
+				panic(fmt.Sprintf("prt.VerifyValue vs AppHash failed:%v", err))
+			}
+
 			if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
 				panic("Keccak256 not match")
 			}
-			fmt.Println("proof ok")
+			fmt.Printf("proof ok, proof_height:%d commit_height:%d\n", height, blockData.Number.Int64())
 			// eccdBytes := common.FromHex(eccd)
 			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
 			// if err != nil {
@@ -274,7 +290,7 @@ func main() {
 	// fmt.Println("result", string(resultBytes))
 	// return
 
-	height := int64(2012155)
+	height := int64(2734044)
 
 	block, err := client.Tendermint().QueryBlock(height)
 	if err != nil {
@@ -291,14 +307,28 @@ func main() {
 	}
 
 	fmt.Println("commitResult.Height", commitResult.Header.Height, "height", height)
-	hdr := CosmosHeader{Header: block.Header, Commit: block.LastCommit, Valsets: valResult.Validators}
+	hdr := CosmosHeader{Header: *commitResult.Header, Commit: commitResult.Commit, Valsets: valResult.Validators}
+
+	valResult2, err := client.Tendermint().QueryValidatorsResult(2751745 + 1)
+	if err != nil {
+		panic(err)
+	}
+	if !bytes.Equal(types.NewValidatorSet(valResult2.Validators).Hash(), commitResult.Header.NextValidatorsHash) {
+		panic("NextValidatorsHash not match")
+	}
+
+	fmt.Println("NextValidatorsHash match")
+	return
 
 	cdc := codec.MakeCodec(app.ModuleBasics)
-	hdrBytes, err := cdc.MarshalJSON(hdr)
+	hdrBytes, err := cdc.MarshalBinaryBare(hdr)
 	if err != nil {
 		panic(err)
 	}
 
+	ioutil.WriteFile("raw.hex", []byte(hex.EncodeToString(hdrBytes)), 0777)
+	// fmt.Println(hex.EncodeToString(hdrBytes))
+	return
 	err = cdc.UnmarshalJSON(hdrBytes, &hdr)
 	if err != nil {
 		panic(err)
