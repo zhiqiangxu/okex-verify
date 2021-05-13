@@ -277,8 +277,18 @@ func verifyMerkleProof(okProof *tools.ETHProof, blockData *ethtypes.Header, cont
 
 func main() {
 
-	getProof()
-	return
+	// getProof()
+	// return
+
+	ethClient, err := ethclient.Dial(rpcURL)
+	if err != nil {
+		panic(fmt.Sprintf("ethclient.Dial failed:%v", err))
+	}
+
+	height, err := ethClient.BlockNumber(context.Background())
+	if err != nil {
+		panic(fmt.Sprintf("ethClient.BlockNumber failed:%v", err))
+	}
 
 	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
 	client := oksdk.NewClient(config)
@@ -292,24 +302,34 @@ func main() {
 	// fmt.Println("result", string(resultBytes))
 	// return
 
-	height := int64(2734044)
+	heightInt64 := int64(height)
 
-	block, err := client.Tendermint().QueryBlock(height)
+	// block, err := client.Tendermint().QueryBlock(heightInt64)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	commitResult, err := client.Tendermint().QueryCommitResult(heightInt64)
 	if err != nil {
 		panic(err)
 	}
-	commitResult, err := client.Tendermint().QueryCommitResult(height)
-	if err != nil {
-		panic(err)
-	}
 
-	valResult, err := client.Tendermint().QueryValidatorsResult(height)
+	valResult, err := client.Tendermint().QueryValidatorsResult(heightInt64)
 	if err != nil {
 		panic(err)
 	}
 
 	fmt.Println("commitResult.Height", commitResult.Header.Height, "height", height)
 	hdr := CosmosHeader{Header: *commitResult.Header, Commit: commitResult.Commit, Valsets: valResult.Validators}
+
+	cdc := codec.MakeCodec(app.ModuleBasics)
+	hdrBytes, err := cdc.MarshalBinaryBare(hdr)
+	if err != nil {
+		panic(err)
+	}
+
+	ioutil.WriteFile("raw.hex", []byte(hex.EncodeToString(hdrBytes)), 0777)
+	// fmt.Println(hex.EncodeToString(hdrBytes))
+	return
 
 	valResult2, err := client.Tendermint().QueryValidatorsResult(2751745 + 1)
 	if err != nil {
@@ -322,21 +342,12 @@ func main() {
 	fmt.Println("NextValidatorsHash match")
 	return
 
-	cdc := codec.MakeCodec(app.ModuleBasics)
-	hdrBytes, err := cdc.MarshalBinaryBare(hdr)
-	if err != nil {
-		panic(err)
-	}
-
-	ioutil.WriteFile("raw.hex", []byte(hex.EncodeToString(hdrBytes)), 0777)
-	// fmt.Println(hex.EncodeToString(hdrBytes))
-	return
 	err = cdc.UnmarshalJSON(hdrBytes, &hdr)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println("block", block)
+	// fmt.Println("block", block)
 	fmt.Println("commitResult", commitResult)
 	fmt.Println("valResult", valResult)
 }
