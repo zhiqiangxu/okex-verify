@@ -150,8 +150,10 @@ func getProof() {
 			// var StorageResult
 
 			keyPath := "/"
+			fmt.Println("#op", len(mproof.Ops))
 			for i := range mproof.Ops {
 				op := mproof.Ops[len(mproof.Ops)-1-i]
+				fmt.Println("op type", op.Type)
 				keyPath += string(op.Key)
 				keyPath += "/"
 			}
@@ -161,6 +163,9 @@ func getProof() {
 
 			fmt.Println("keyPath", keyPath)
 
+			if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
+				panic("Keccak256 not match")
+			}
 			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
 			if err != nil {
 				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
@@ -174,9 +179,6 @@ func getProof() {
 				panic(fmt.Sprintf("prt.VerifyValue vs AppHash failed:%v", err))
 			}
 
-			if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
-				panic("Keccak256 not match")
-			}
 			fmt.Printf("proof ok, proof_height:%d commit_height:%d\n", height, blockData.Number.Int64())
 			// eccdBytes := common.FromHex(eccd)
 			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
