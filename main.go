@@ -53,11 +53,11 @@ func getProof() {
 		panic(fmt.Sprintf("ethclient.Dial failed:%v", err))
 	}
 
-	receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash("0x05B02D94644BE47727A4B0FEAC3B8552EE6CFA738AB244CDAD8BA18A82ED766C"))
+	receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash("0xE25E8638267F1A72C1F6A2CABCA842AECD966F510B05D345510E6C61D6DAA26E"))
 	if err != nil {
 		panic(fmt.Sprintf("TransactionReceipt failed:%v", err))
 	}
-	eccmAddr := common.HexToAddress("0x41B323acDdCe4692E4618978bf67DA189C7692d3")
+	eccmAddr := common.HexToAddress("0xfb3ab708A49A714D8e9BB42575a2167EBc01514c")
 
 	eccm, err := eccm_abi.NewEthCrossChainManager(eccmAddr, client)
 	if err != nil {
@@ -98,7 +98,7 @@ func getProof() {
 			heightHex := hexutil.EncodeBig(big.NewInt(height))
 			proofKey := hexutil.Encode(keyBytes)
 
-			eccd := "0x2a88feB48E176b535da78266990D556E588Cfe06"
+			eccd := "0x95f478aADa25C19707B0Dca5afDeEe7Dc3e47F69"
 			proof, err := tools.GetProof(rpcURL, eccd, proofKey, heightHex)
 			if err != nil {
 				panic(fmt.Sprintf("tools.GetProof failed:%v", err))
