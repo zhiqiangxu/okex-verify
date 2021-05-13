@@ -154,7 +154,7 @@ func getProof() {
 			for i := range mproof.Ops {
 				op := mproof.Ops[len(mproof.Ops)-1-i]
 				fmt.Println("op type", op.Type)
-				keyPath += string(op.Key)
+				keyPath += "x:" + hex.EncodeToString(op.Key)
 				keyPath += "/"
 			}
 
