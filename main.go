@@ -6,15 +6,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/cosmos/cosmos-sdk/x/auth"
+	"github.com/cosmos/cosmos-sdk/x/auth/exported"
 	"io/ioutil"
 	"math/big"
 	"strings"
 
 	"github.com/okex/exchain/app"
 	"github.com/okex/exchain/app/codec"
+	apptypes "github.com/okex/exchain/app/types"
 
-	"github.com/zhiqiangxu/okex-verify/pkg/eccm_abi"
-
+	sdkcdc "github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -26,16 +28,17 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	proto "github.com/gogo/protobuf/proto"
 	oksdk "github.com/okex/exchain-go-sdk"
-	common1 "github.com/polynetwork/poly/common"
+	evmtypes "github.com/okex/exchain/x/evm/types"
 	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
 	"github.com/polynetwork/poly/native/service/cross_chain_manager/eth"
+	tmcrypto "github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/merkle"
 	"github.com/tendermint/tendermint/types"
 	"github.com/zhiqiangxu/okex-verify/pkg/tools"
 )
 
 var (
-	rpcURL   = "https://exchaintestrpc.okex.org/"
+	rpcURL   = "http://localhost:8545"
 	rpcTMURL = "https://exchaintesttmrpc.okex.org"
 	name     = "alice"
 	passWd   = "12345678"
@@ -43,152 +46,192 @@ var (
 	addr     = "okexchain1ntvyep3suq5z7789g7d5dejwzameu08m6gh7yl"
 )
 
+var ModuleCdc = sdkcdc.New()
+
+func init() {
+	ModuleCdc.RegisterInterface((*exported.GenesisAccount)(nil), nil)
+	ModuleCdc.RegisterInterface((*exported.Account)(nil), nil)
+	ModuleCdc.RegisterInterface((*tmcrypto.PubKey)(nil), nil)
+	ModuleCdc.RegisterConcrete(&auth.BaseAccount{}, "cosmos-sdk/Account", nil)
+	ModuleCdc.RegisterConcrete(&apptypes.EthAccount{}, apptypes.EthAccountName, nil)
+}
+
+func GetStorageByAddressKey(addr common.Address, key []byte) common.Hash {
+	prefix := addr.Bytes()
+	compositeKey := make([]byte, len(prefix)+len(key))
+
+	copy(compositeKey, prefix)
+	copy(compositeKey[len(prefix):], key)
+
+	return crypto.Keccak256Hash(compositeKey)
+}
+
 func getProof() {
 
-	config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
-	okclient := oksdk.NewClient(config)
+	//config, _ := oksdk.NewClientConfig(rpcTMURL, "okexchain-65", oksdk.BroadcastBlock, "0.01okt", 200000, 0, "")
+	//okclient := oksdk.NewClient(config)
 
 	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
 		panic(fmt.Sprintf("ethclient.Dial failed:%v", err))
 	}
 
-	receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash("0x05B02D94644BE47727A4B0FEAC3B8552EE6CFA738AB244CDAD8BA18A82ED766C"))
+	//receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash("0x05B02D94644BE47727A4B0FEAC3B8552EE6CFA738AB244CDAD8BA18A82ED766C"))
+	//if err != nil {
+	//	panic(fmt.Sprintf("TransactionReceipt failed:%v", err))
+	//}
+	//eccmAddr := common.HexToAddress("0x41B323acDdCe4692E4618978bf67DA189C7692d3")
+	//
+	//eccm, err := eccm_abi.NewEthCrossChainManager(eccmAddr, client)
+	//if err != nil {
+	//	panic(fmt.Sprintf("eccm_abi.NewEthCrossChainManager failed:%v", err))
+	//}
+	//for _, elog := range receipt.Logs {
+	//
+	//	if elog.Address == eccmAddr {
+	//
+	//		evt, err := eccm.ParseCrossChainEvent(*elog)
+	//		if err != nil {
+	//			panic(fmt.Sprintf("eccm.ParseCrossChainEvent failed:%v", err))
+	//		}
+
+	//param := &common2.MakeTxParam{}
+	//err = param.Deserialization(common1.NewZeroCopySource([]byte(evt.Rawdata)))
+	//if err != nil {
+	//	panic(fmt.Sprintf("param.Deserialization failed:%v", err))
+	//}
+
+	txIDBig := big.NewInt(0)
+	//txIDBig.SetBytes(evt.TxId)
+	txID := tools.EncodeBigInt(txIDBig)
+	// txHash := evt.Raw.TxHash.Bytes()
+
+	keyBytes, err := eth.MappingKeyAt(txID, "01")
 	if err != nil {
-		panic(fmt.Sprintf("TransactionReceipt failed:%v", err))
+		panic(fmt.Sprintf("eth.MappingKeyAt failed:%v", err))
 	}
-	eccmAddr := common.HexToAddress("0x41B323acDdCe4692E4618978bf67DA189C7692d3")
 
-	eccm, err := eccm_abi.NewEthCrossChainManager(eccmAddr, client)
+	fmt.Println("txIDBig", txIDBig, "storage key", hex.EncodeToString(keyBytes))
+
+	refHeight, err := client.BlockNumber(context.Background())
 	if err != nil {
-		panic(fmt.Sprintf("eccm_abi.NewEthCrossChainManager failed:%v", err))
+		panic(fmt.Sprintf("client.BlockNumber failed:%v", err))
 	}
-	for _, elog := range receipt.Logs {
+	height := int64(refHeight - 1)
+	heightHex := hexutil.EncodeBig(big.NewInt(height))
+	proofKey := hexutil.Encode(keyBytes)
 
-		if elog.Address == eccmAddr {
-
-			evt, err := eccm.ParseCrossChainEvent(*elog)
-			if err != nil {
-				panic(fmt.Sprintf("eccm.ParseCrossChainEvent failed:%v", err))
-			}
-
-			param := &common2.MakeTxParam{}
-			err = param.Deserialization(common1.NewZeroCopySource([]byte(evt.Rawdata)))
-			if err != nil {
-				panic(fmt.Sprintf("param.Deserialization failed:%v", err))
-			}
-
-			txIDBig := big.NewInt(0)
-			txIDBig.SetBytes(evt.TxId)
-			txID := tools.EncodeBigInt(txIDBig)
-			// txHash := evt.Raw.TxHash.Bytes()
-
-			keyBytes, err := eth.MappingKeyAt(txID, "01")
-			if err != nil {
-				panic(fmt.Sprintf("eth.MappingKeyAt failed:%v", err))
-			}
-
-			fmt.Println("txIDBig", txIDBig, "storage key", hex.EncodeToString(keyBytes))
-
-			refHeight, err := client.BlockNumber(context.Background())
-			if err != nil {
-				panic(fmt.Sprintf("client.BlockNumber failed:%v", err))
-			}
-			height := int64(refHeight - 3)
-			heightHex := hexutil.EncodeBig(big.NewInt(height))
-			proofKey := hexutil.Encode(keyBytes)
-
-			eccd := "0x2a88feB48E176b535da78266990D556E588Cfe06"
-			proof, err := tools.GetProof(rpcURL, eccd, proofKey, heightHex)
-			if err != nil {
-				panic(fmt.Sprintf("tools.GetProof failed:%v", err))
-			}
-
-			okProof := new(tools.ETHProof)
-			err = json.Unmarshal(proof, okProof)
-			if err != nil {
-				panic(fmt.Sprintf("ETHProof Unmarshal failed:%v", err))
-			}
-
-			blockData, err := client.HeaderByNumber(context.Background(), big.NewInt(height+1))
-			if err != nil {
-				panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
-			}
-			cr, err := okclient.Tendermint().QueryCommitResult(height + 1)
-			if err != nil {
-				panic(fmt.Sprintf("QueryCommitResult failed:%v", err))
-			}
-
-			var accountProof merkle.Proof
-			err = proto.UnmarshalText(okProof.AccountProof[0], &accountProof)
-			if err != nil {
-				panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
-			}
-
-			accountKeyPath := "/"
-			for i := range accountProof.Ops {
-				op := accountProof.Ops[len(accountProof.Ops)-1-i]
-				accountKeyPath += string(op.Key)
-				accountKeyPath += "/"
-			}
-			accountKeyPath = strings.TrimSuffix(accountKeyPath, "/")
-
-			prt := rootmulti.DefaultProofRuntime()
-
-			err = prt.VerifyValue(&accountProof, blockData.Root.Bytes(), accountKeyPath, common.BytesToHash([]byte(okProof.AccountProof[0])).Bytes())
-			if false && err != nil {
-				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
-			}
-
-			var mproof merkle.Proof
-			err = proto.UnmarshalText(okProof.StorageProofs[0].Proof[0], &mproof)
-			if err != nil {
-				panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
-			}
-
-			fmt.Println("proof", string(proof))
-			// var StorageResult
-
-			keyPath := "/"
-			fmt.Println("#op", len(mproof.Ops))
-			for i := range mproof.Ops {
-				op := mproof.Ops[len(mproof.Ops)-1-i]
-				fmt.Println("op type", op.Type)
-				keyPath += string(op.Key)
-				keyPath += "/"
-			}
-
-			keyPath = strings.TrimSuffix(keyPath, "/")
-			//keyPath = "/evm/\005\r\002\035\020\253\236\025_\301\350p]\022\267?\233\323\336\n6ZF\205\027\326\370?\256pe\2520`\374\n\337\n\304\260\301H\026GJhw\215\220w;\323q"
-
-			fmt.Println("keyPath", keyPath)
-
-			if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
-				panic("Keccak256 not match")
-			}
-			err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
-			if err != nil {
-				panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
-			}
-
-			if !bytes.Equal(cr.AppHash, blockData.Root.Bytes()) {
-				panic("AppHash != Root")
-			}
-			err = prt.VerifyValue(&mproof, cr.AppHash, keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
-			if err != nil {
-				panic(fmt.Sprintf("prt.VerifyValue vs AppHash failed:%v", err))
-			}
-
-			fmt.Printf("proof ok, proof_height:%d commit_height:%d\n", height, blockData.Number.Int64())
-			// eccdBytes := common.FromHex(eccd)
-			// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
-			// if err != nil {
-			// 	panic(fmt.Sprintf("verifyMerkleProof failed:%v, proof:%v", err, string(proof)))
-			// }
-			// fmt.Println("result", string(result))
-
-		}
+	eccd := "0x5C2C4410d4E044fbFc5b3aa5A653113c7830024B"
+	proof, err := tools.GetProof(rpcURL, eccd, proofKey, heightHex)
+	if err != nil {
+		panic(fmt.Sprintf("tools.GetProof failed:%v", err))
 	}
+
+	okProof := new(tools.ETHProof)
+	err = json.Unmarshal(proof, okProof)
+	if err != nil {
+		panic(fmt.Sprintf("ETHProof Unmarshal failed:%v", err))
+	}
+
+	blockData, err := client.HeaderByNumber(context.Background(), big.NewInt(height+1))
+	if err != nil {
+		panic(fmt.Sprintf("HeaderByNumber failed:%v", err))
+	}
+	//cr, err := okclient.Tendermint().QueryCommitResult(height + 1)
+	//if err != nil {
+	//	panic(fmt.Sprintf("QueryCommitResult failed:%v", err))
+	//}
+
+	var accountProof merkle.Proof
+	err = proto.UnmarshalText(okProof.AccountProof[0], &accountProof)
+	if err != nil {
+		panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
+	}
+
+	value, err := hex.DecodeString(okProof.AccountProof[1])
+	if err != nil {
+		panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
+	}
+	var account apptypes.EthAccount
+	err = ModuleCdc.UnmarshalBinaryBare(value, &account)
+	if err != nil {
+		panic(fmt.Sprintf("cdc.UnmarshalBinaryBare failed:%v", err))
+	}
+
+	//if !bytes.Equal()
+
+	accountKeyPath := "/"
+	for i := range accountProof.Ops {
+		op := accountProof.Ops[len(accountProof.Ops)-1-i]
+		fmt.Println("op type", op.Type)
+		accountKeyPath += "x:" + hex.EncodeToString(op.Key)
+		accountKeyPath += "/"
+	}
+	accountKeyPath = strings.TrimSuffix(accountKeyPath, "/")
+
+	prt := rootmulti.DefaultProofRuntime()
+
+	err = prt.VerifyValue(&accountProof, blockData.Root.Bytes(), accountKeyPath, value)
+	if err != nil {
+		panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
+	}
+
+	address := common.HexToAddress(eccd)
+	data := append(evmtypes.AddressStoragePrefix(address), GetStorageByAddressKey(address, keyBytes).Bytes()...)
+
+	var mproof merkle.Proof
+	err = proto.UnmarshalText(okProof.StorageProofs[0].Proof[0], &mproof)
+	if err != nil {
+		panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
+	}
+
+	if !bytes.Equal(mproof.Ops[0].GetKey(), data) {
+		panic(fmt.Sprintf("proto.UnmarshalText failed:%v", err))
+	}
+
+	fmt.Println("proof", string(proof))
+	// var StorageResult
+
+	keyPath := "/"
+	fmt.Println("#op", len(mproof.Ops))
+	for i := range mproof.Ops {
+		op := mproof.Ops[len(mproof.Ops)-1-i]
+		fmt.Println("op type", op.Type)
+		keyPath += "x:" + hex.EncodeToString(op.Key)
+		keyPath += "/"
+	}
+
+	keyPath = strings.TrimSuffix(keyPath, "/")
+	//keyPath = "/evm/\005\r\002\035\020\253\236\025_\301\350p]\022\267?\233\323\336\n6ZF\205\027\326\370?\256pe\2520`\374\n\337\n\304\260\301H\026GJhw\215\220w;\323q"
+
+	fmt.Println("keyPath", keyPath)
+
+	//if !bytes.Equal(okProof.StorageProofs[0].Value.ToInt().Bytes(), crypto.Keccak256(evt.Rawdata)) {
+	//	panic("Keccak256 not match")
+	//}
+	//err = prt.VerifyValue(&mproof, blockData.Root.Bytes(), keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
+	//if err != nil {
+	//	panic(fmt.Sprintf("prt.VerifyValue failed:%v", err))
+	//}
+	//
+	//if !bytes.Equal(cr.AppHash, blockData.Root.Bytes()) {
+	//	panic("AppHash != Root")
+	//}
+	//err = prt.VerifyValue(&mproof, cr.AppHash, keyPath, common.BytesToHash(okProof.StorageProofs[0].Value.ToInt().Bytes()).Bytes())
+	//if err != nil {
+	//	panic(fmt.Sprintf("prt.VerifyValue vs AppHash failed:%v", err))
+	//}
+
+	fmt.Printf("proof ok, proof_height:%d commit_height:%d\n", height, blockData.Number.Int64())
+	// eccdBytes := common.FromHex(eccd)
+	// result, err := verifyMerkleProof(okProof, blockData, eccdBytes)
+	// if err != nil {
+	// 	panic(fmt.Sprintf("verifyMerkleProof failed:%v, proof:%v", err, string(proof)))
+	// }
+	// fmt.Println("result", string(result))
+
+	//}
+	//}
 }
 
 // ProofAccount ...
